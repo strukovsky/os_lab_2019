@@ -33,44 +33,52 @@ int main(int argc, char **argv) {
     int option_index = 0;
     int c = getopt_long(argc, argv, "f", options, &option_index);
 
-    if (c == -1) break;
+    if (c == -1)
+      break;
 
     switch (c) {
+    case 0:
+      switch (option_index) {
       case 0:
-        switch (option_index) {
-          case 0:
-            seed = atoi(optarg);
-            // your code here
-            // error handling
-            break;
-          case 1:
-            array_size = atoi(optarg);
-            // your code here
-            // error handling
-            break;
-          case 2:
-            pnum = atoi(optarg);
-            // your code here
-            // error handling
-            break;
-          case 3:
-            with_files = true;
-            break;
+        seed = atoi(optarg);
+        if( seed <= 0)
+        return 1;
 
-          defalut:
-            printf("Index %d is out of options\n", option_index);
-        }
         break;
-      case 'f':
+      case 1:
+        array_size = atoi(optarg);
+if( array_size <= 0)
+        return 1;
+        break;
+      case 2:
+        pnum = atoi(optarg);
+if( pnum <= 0)
+        return 1;
+        break;
+      case 3:
         with_files = true;
         break;
 
-      case '?':
-        break;
+      defalut:
+        printf("Index %d is out of options\n", option_index);
+      }
+      break;
+    case 'f':
+      with_files = true;
+      break;
 
-      default:
-        printf("getopt returned character code 0%o?\n", c);
+    case '?':
+      break;
+
+    default:
+      printf("getopt returned character code 0%o?\n", c);
     }
+  }
+
+  if(array_size % pnum != 0)
+  {
+      printf("Array size must be divisable by processes number\n");
+      return 1;
   }
 
   if (optind < argc) {
@@ -91,23 +99,49 @@ int main(int argc, char **argv) {
   struct timeval start_time;
   gettimeofday(&start_time, NULL);
 
+  struct MinMax array_of_min_max[pnum];
+  int iter = 0;
+
+  char *filename = "aboba.txt";
+
+  FILE* fp; int pipefd[2];
+  if(with_files)
+  {
+      fp = fopen(filename, "w");
+  }
+
+  else
+  {
+       
+       if(pipe(pipefd) == -1)
+       {
+           printf("Pipe failed!\n");
+          return 1;
+       }
+
+  }
+
+
+  int size_of_part = array_size / pnum;
   for (int i = 0; i < pnum; i++) {
+    printf("Iteration: %d\n", i);
     pid_t child_pid = fork();
     if (child_pid >= 0) {
       // successful fork
-      active_child_processes += 1;
+      active_child_processes++;
       if (child_pid == 0) {
-        // child process
-
-        // parallel somehow
-
+        struct MinMax result_for_child;
+        int start = size_of_part * i;
+        int end = (i + 1) * size_of_part;
+        printf("from %d to %d\n", start, end);
+        result_for_child = GetMinMax(array, start, end);
         if (with_files) {
-          // use files here
+          fprintf(fp, "%d %d\n", result_for_child.min, result_for_child.max);
         } else {
-          // use pipe here
+          write(pipefd[1], &result_for_child, sizeof(result_for_child));
         }
         return 0;
-      }
+      } 
 
     } else {
       printf("Fork failed!\n");
@@ -116,27 +150,44 @@ int main(int argc, char **argv) {
   }
 
   while (active_child_processes > 0) {
-    // your code here
-
-    active_child_processes -= 1;
+      wait(NULL);
+  active_child_processes--;
   }
 
   struct MinMax min_max;
   min_max.min = INT_MAX;
   min_max.max = INT_MIN;
 
+  if (with_files) {
+      fclose(fp);
+      fp = fopen(filename, "r");
+    }
+  struct MinMax buff;
   for (int i = 0; i < pnum; i++) {
     int min = INT_MAX;
     int max = INT_MIN;
-
+    int current_min;
+    int current_max;
     if (with_files) {
-      // read from files
+      fscanf(fp, "%d %d\n", &current_min, &current_max);
     } else {
-      // read from pipes
+      read(pipefd[0], &buff, sizeof(buff));
+      current_max = buff.max;
+      current_min = buff.min;
     }
+    if(current_min < min)
+      {
+          min = current_min;
+      }
+      if(current_max > max)
+      {
+          max = current_max;
+      }
 
-    if (min < min_max.min) min_max.min = min;
-    if (max > min_max.max) min_max.max = max;
+    if (min < min_max.min)
+      min_max.min = min;
+    if (max > min_max.max)
+      min_max.max = max;
   }
 
   struct timeval finish_time;
